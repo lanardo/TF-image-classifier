@@ -1,79 +1,12 @@
-import tensorflow as tf
 import os
-import numpy as np
 import sys
-import tarfile
 import cv2
 import csv
-from six.moves import urllib
+
+from embed import Embed
 
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # for disable the info log of tensorflow itself
-MODEL_DIR = "./model"
-
-DATA_URL = 'http://download.tensorflow.org/models/image/imagenet/inception-2015-12-05.tgz'
-LABELS = ['front', 'front_quarter', 'side', 'rear_quarter', 'rear']
-directions = [
-    [1., 0., 0., 0., 0.],
-    [0., 1., 0., 0., 0.],
-    [0., 0., 1., 0., 0.],
-    [0., 0., 0., 1., 0.],
-    [0., 0., 0., 0., 1.]
-]
-
-
-def create_graph():
-    # Creates a graph from saved GraphDef file and returns a saver.
-    # Creates graph from saved graph_def.pb.
-    with tf.gfile.FastGFile(os.path.join(
-            MODEL_DIR, 'classify_image_graph_def.pb'), 'rb') as f:
-        graph_def = tf.GraphDef()
-        graph_def.ParseFromString(f.read())
-        _ = tf.import_graph_def(graph_def, name='')
-
-
-def maybe_download_and_extract():
-    # Download and extract model tar file.
-    dest_directory = MODEL_DIR
-    if not os.path.exists(dest_directory):
-        os.makedirs(dest_directory)
-    filename = DATA_URL.split('/')[-1]
-    filepath = os.path.join(dest_directory, filename)
-    if not os.path.exists(filepath):
-        def _progress(count, block_size, total_size):
-            sys.stdout.write('    \r>> Downloading %s %.1f%%\n' % (
-                filename, float(count * block_size) / float(total_size) * 100.0))
-            sys.stdout.flush()
-        filepath, _ = urllib.request.urlretrieve(DATA_URL, filepath, _progress)
-
-        statinfo = os.stat(filepath)
-        sys.stdout.write('    Successfully downloaded' + filename + statinfo.st_size + 'bytes.\n')
-    tarfile.open(filepath, 'r:gz').extractall(dest_directory)
-
-
-sess, softmax_tensor = None, None
-
-
-def _get_feature_from_image(img_path):
-    # Runs extract the feature from the image.
-    # Args: img_path: Image file name.
-    # Returns:  predictions: 2048 * 1 feature vector
-    global sess, softmax_tensor
-
-    if not tf.gfile.Exists(img_path):
-        tf.logging.fatal('File does not exist %s', img_path)
-    image_data = tf.gfile.FastGFile(img_path, 'rb').read()
-
-    predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
-    predictions = np.squeeze(predictions)
-    return predictions
-
-
-w, b = None, None
-
-
-def _get_label(feature):
-    global w, b
+def classify(feature, w, b):
     ret = []
     # for python 2x
     for i in range(len(b[0])):
@@ -84,8 +17,8 @@ def _get_label(feature):
     return ret.index(max(ret))
 
 
-def _load_model_coefs(model_dir):
-    global w, b
+def load_coefs(model_dir):
+
     w_fn = os.path.join(model_dir, "w.csv")
     b_fn = os.path.join(model_dir, "b.csv")
     sys.stdout.write("    file for W : {}\n".format(w_fn))
@@ -106,54 +39,44 @@ def _load_model_coefs(model_dir):
         for row in csv_reader:
             b.append([float(row[i]) for i in range(len(row))])
     sys.stdout.write("    shape of b : {} x {}\n".format(len(b), len(b[0])))
-    return True
+    return w, b
 
     
-def _inference(input, output):
-    tf.reset_default_graph()
-    tf.Graph().as_default()
+def inference(in_dir, model_dir):
+    emb = Embed()
 
-    global sess, softmax_tensor
+    LABELS = ['front', 'front_quarter', 'side', 'rear_quarter', 'rear']
+    w, b = load_coefs(model_dir)
 
-    maybe_download_and_extract()
-
-    create_graph()
-    sess = tf.Session()
-    softmax_tensor = sess.graph.get_tensor_by_name('pool_3:0')
-     
-    if not os.path.exists(output):
-        os.mkdirs(output)
-    
+    cnts = [0, 0, 0, 0, 0]
     # scan image in input
-    cnt = [0, 0, 0, 0, 0]
     sys.stdout.write("    Scan folder for classification...\n")
-    
-    files = [f for f in os.listdir(input) if os.path.isfile(os.path.join(input, f))]
+    files = [f for f in os.listdir(in_dir) if os.path.isfile(os.path.join(in_dir, f))]
     sys.stdout.write("    total files {}\n".format(len(files)))
 
     for f in files:
         fn, ext = os.path.splitext(f)
         if ext.lower() == '.png':
             # Convert image file to jpg
-            im = cv2.imread(os.path.join(input, f))
-            new_fn = os.path.join(input, fn + '.jpg')
+            im = cv2.imread(os.path.join(in_dir, f))
+            new_fn = os.path.join(in_dir, fn + '.jpg')
             cv2.imwrite(new_fn, im)
-            os.remove(os.path.join(input, f))
+            os.remove(os.path.join(in_dir, f))
         elif ext.lower() == '.jpg':
-            new_fn = os.path.join(input, f)
+            new_fn = os.path.join(in_dir, f)
         else:
             continue
 
         # Extract the feature vector per each image
-        feature = _get_feature_from_image(new_fn)
-        line = feature.tolist()
-        label_idx = _get_label(line)
+        feature = emb.get_feature_from_image(new_fn)
+        feature = feature.tolist()
+        label_idx = classify(feature, w, b)
         
         # move the labeled image to folder named with its label(string)
-        cnt[label_idx] += 1
+        cnts[label_idx] += 1
         label = LABELS[label_idx]
 
-        label_dir = os.path.join(output, label)
+        label_dir = os.path.join(in_dir, label)
         if not os.path.exists(label_dir):
             os.makedirs(label_dir)
         out_fn = os.path.join(label_dir, f)
@@ -164,35 +87,8 @@ def _inference(input, output):
             os.rename(new_fn, out_fn)
         sys.stdout.write("    label({}) : file{}\n".format(label, new_fn))
 
-    return cnt
-
-
-def classify(input_dir, output_dir, model_dir):
-
-    """
-       classify the input image to 7 classes
-           LABELS = ['front', 'front_3_quarter', 'side', 'rear_3_quarter', 'rear', 'interior', 'tire']
-       Args:
-           input_dir:
-           output_dir:
-
-       Returns:
-           list:
-            result of classification number of images for each labels
-
-    """
-
-    if input_dir is None or output_dir is None:
-        raise Exception("    Input_dir or Output_dir not defined")
-
-    if model_dir is None:
-        model_dir = "./mdoel"
-    global MODEL_DIR
-    MODEL_DIR = model_dir
-    if not os.path.exists(model_dir) or _load_model_coefs(model_dir) == False:
-        raise Exception("    No such dir or files for getting coefs.")
-
-    cnts = _inference(input_dir, output_dir)
-    sys.stdout.write("    Classification finished Successfully!\n")
-
     return cnts
+
+
+if __name__ == '__main__':
+    inference("./data/test", "./model")
