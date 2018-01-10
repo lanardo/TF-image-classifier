@@ -43,8 +43,7 @@ class Train:
 
         self.extensions = ['.png', '.jpg']
 
-        # self.labels = ['front', 'front_quarter', 'side', 'rear_quarter', 'rear']
-        self.labels = ['front', 'front_3_quarter', 'side', 'rear_3_quarter', 'rear', 'interior', 'tire']  # only for testing
+        
 
         self.rate = 0.0001
         self.epochs = 200000
@@ -62,7 +61,7 @@ class Train:
             if os.path.isdir(child_path):
                 sub_dirs.append(child)
         sub_dirs.sort()
-        self.labels = sub_dirs
+        labels = sub_dirs
 
         tails = []
         for i in range(len(sub_dirs)):
@@ -101,13 +100,13 @@ class Train:
                 features.append(line)
                 count += 1
 
-                # if count > 10:
-                #     break
+                if count > 10:
+                    break
 
             sys.stdout.write("\nLabel: {}, Counts: {}\n".format(sub_dir_name, count))
 
+        # write the train_data.csv file on the same location
         train_data_path = os.path.join(self.train_dir, "train_data.csv")
-        # save the features the csv file
         if sys.version_info[0] == 2:  # py 2x
             with open(train_data_path, 'wb') as fp:  # for python 2x
                 wr = csv.writer(fp, delimiter=',')
@@ -117,8 +116,22 @@ class Train:
                 wr = csv.writer(fp, delimiter=',')
                 wr.writerows(features)
 
+        # write the train_label.txt on the same location
+        train_label_path = os.path.join(self.train_dir, "train_label.txt")
+        with open(train_label_path, 'w') as fp:
+            for label in labels:
+                fp.write(label + "\n")
+
         sys.stdout.write("Create the train_data.csv successfully!\n")
-        return train_data_path, self.labels
+        return train_data_path
+
+    def load_label_info(self):
+        train_label_path = os.path.join(self.train_dir, "train_label.txt")
+        labels = []
+        with open(train_label_path, 'r') as fp:
+            for line in fp:
+                labels.append(line)
+            return labels
 
     def train(self, bRestore):
         in_dir = self.train_dir
@@ -131,7 +144,7 @@ class Train:
         train_data_path = os.path.join(in_dir, 'train_data.csv')
         ckpt_path = os.path.join(out_dir, 'model_bin.ckpt')
 
-        labels = self.labels
+        labels = self.load_label_info()
 
         x_data = []
         y_data = []
@@ -198,7 +211,7 @@ class Train:
         w_coef_path = os.path.join(out_dir, 'w.csv')
         b_coef_path = os.path.join(out_dir, 'b.csv')
         ckpt_path = os.path.join(out_dir, 'model_bin.ckpt')
-        labels = self.labels
+        labels = self.load_label_info()
 
         """ Placeholder """
         sys.stdout.write('Placeholder\n')
@@ -246,6 +259,6 @@ class Train:
 if __name__ == '__main__':
 
     tr = Train()
-    # tr.train_data()
+    tr.train_data()
     # tr.train(bRestore=True)
-    tr.save_coefs()
+    # tr.save_coefs()
