@@ -41,11 +41,20 @@ def load_coefs(model_dir):
     sys.stdout.write("    shape of b : {} x {}\n".format(len(b), len(b[0])))
     return w, b
 
-    
+
+def load_label_info(train_label_path):
+    labels = []
+    with open(train_label_path, 'r') as fp:
+        for line in fp:
+            line = line.replace('\n', '')
+            labels.append(line)
+        return labels
+
+
 def inference(in_dir, model_dir):
     emb = Embed()
 
-    LABELS = ['front', 'front_quarter', 'side', 'rear_quarter', 'rear']
+    LABELS = load_label_info("./data/train/train_label.txt")
     w, b = load_coefs(model_dir)
 
     cnts = [0, 0, 0, 0, 0]

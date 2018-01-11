@@ -100,8 +100,8 @@ class Train:
                 features.append(line)
                 count += 1
 
-                if count > 10:
-                    break
+                # if count > 10:  # for only testing
+                #     break
 
             sys.stdout.write("\nLabel: {}, Counts: {}\n".format(sub_dir_name, count))
 
@@ -130,6 +130,7 @@ class Train:
         labels = []
         with open(train_label_path, 'r') as fp:
             for line in fp:
+                line.replace('\n', '')
                 labels.append(line)
             return labels
 
@@ -259,6 +260,6 @@ class Train:
 if __name__ == '__main__':
 
     tr = Train()
-    tr.train_data()
+    # tr.train_data()
     # tr.train(bRestore=True)
-    # tr.save_coefs()
+    tr.save_coefs()
